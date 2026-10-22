@@ -1,0 +1,50 @@
+name: API tests
+
+on:
+  push:
+    branches: ["**"]   # every branch
+  pull_request:
+    branches: [main]   # PRs targeting main
+  workflow_dispatch:   # "Run workflow" button in the Actions tab
+
+# The job only needs to read the code.
+permissions:
+  contents: read
+
+jobs:
+  api-tests:
+    name: Run API tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.3.2
+        with:
+          enable-cache: true   # caches downloaded packages, keyed on uv.lock
+
+      - name: Install Python and dependencies
+        run: |
+          uv python install    # version from .python-version
+          uv sync --locked     # exact versions from uv.lock; fails if the lock is out of date
+
+      # No "playwright install" step: the tests only use APIRequestContext,
+      # which sends plain HTTP requests and never launches a browser.
+
+      - name: Run API tests
+        env:
+          BASE_URL: https://api.practicesoftwaretesting.com
+          ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+        run: uv run pytest -v --junitxml=reports/junit.xml
+
+      - name: Upload test report
+        if: always()   # upload even when tests fail
+        uses: actions/upload-artifact@v7
+        with:
+          name: junit-report
+          path: reports/junit.xml
+          if-no-files-found: warn
